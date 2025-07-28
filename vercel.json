@@ -1,11 +1,9 @@
 {
+  "version": 2,
   "builds": [
     { "src": "backend/wsgi.py", "use": "@vercel/python" }
   ],
   "routes": [
     { "src": "/(.*)", "dest": "backend/wsgi.py" }
-  ],
-  "hooks": {
-    "build": "bash build_files.sh"
-  }
+  ]
 }
