@@ -142,9 +142,11 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 
 
+import re
 
 # Allow only frontend domain (replace with actual)
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "https://dronegasm.vercel.app",
+    "http://192.168.163.45:5173",
 ]
