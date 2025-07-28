@@ -59,12 +59,26 @@
         <h1>Welcome to DroneGasm</h1>
         <p>Experience the future of drone technology. Discover, manage, and elevate your drone operations with ease.</p>
         <a href="" class="cta-btn">Get Started</a>
-        <ul class="features">
-            <li>✔️ Real-time drone building</li>
-            <li>✔️ Advanced analytics dashboard</li>
-            <li>✔️ Seamless flight detailing</li>
-            <li>✔️ Secure data management</li>
-        </ul>
+        <p>Leave a message to test the database:</p>
+
+                <form method="POST" style="margin-bottom: 30px;">
+                    {% csrf_token %}
+                    <input type="text" name="name" placeholder="Your Name" required style="padding: 10px; width: 40%; margin-bottom: 10px;"><br>
+                    <textarea name="text" placeholder="Your message" required style="padding: 10px; width: 80%; height: 80px;"></textarea><br>
+                    <button type="submit" class="cta-btn">Submit</button>
+                </form>
+
+                <hr style="margin: 30px 0;">
+
+                <h2>Messages</h2>
+                <ul class="features">
+                    {% for msg in messages %}
+                        <li><strong>{{ msg.name }}</strong>: {{ msg.text }}</li>
+                    {% empty %}
+                        <li>No messages yet.</li>
+                    {% endfor %}
+                </ul>
+
     </div>
 </body>
 </html>
