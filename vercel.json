@@ -6,6 +6,6 @@
     { "src": "/(.*)", "dest": "backend/wsgi.py" }
   ],
   "hooks": {
-    "build": "bash vercel-postinstall.sh"
+    "build": "bash build_files.sh"
   }
 }
