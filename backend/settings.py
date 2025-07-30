@@ -149,5 +149,4 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://localhost:5173",
     "https://dronegasm.vercel.app",
-    "http://192.168.163.45:5173",
 ]
