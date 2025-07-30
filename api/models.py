@@ -47,7 +47,7 @@ class Build(models.Model):
     motors = models.CharField(max_length=100, blank=True, null=True)
     vtx = models.CharField(max_length=100, blank=True, null=True)
     battery = models.CharField(max_length=100, blank=True, null=True)
-    expected_delivery_date = models.DateField(auto_now_add=True)
+    expected_delivery_days = models.IntegerField(default=15)
     price = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
