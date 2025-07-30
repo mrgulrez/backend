@@ -56,7 +56,7 @@ class Build(models.Model):
         return self.build_id
 
 class DeliveryDetails(models.Model):
-    build = models.OneToOneField(Build, on_delete=models.CASCADE, related_name='delivery')
+    #build = models.OneToOneField(Build, on_delete=models.CASCADE, related_name='delivery')
     delivery_id = models.CharField(max_length=50, unique=True)
     receiver_name = models.CharField(max_length=100)
     receiver_mobile = models.CharField(max_length=15)
