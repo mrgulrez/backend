@@ -20,6 +20,10 @@ def messages_view(request):
             return JsonResponse({"error": "Name and text required"}, status=400)
         except json.JSONDecodeError:
             return JsonResponse({"error": "Invalid JSON"}, status=400)
+        
+
+
+        
 from rest_framework import generics, status
 from rest_framework.response import Response
 from .models import Build
