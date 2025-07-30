@@ -1,12 +1,42 @@
-from rest_framework import serializers
-from .models import Build
+# from rest_framework import serializers
+# from .models import Build
 
-class BuildIdSerializer(serializers.ModelSerializer):
+# class BuildIdSerializer(serializers.ModelSerializer):
+#     class Meta:
+#         model = Build
+#         fields = ['build_id']
+
+# class BuildSerializer(serializers.ModelSerializer):
+#     class Meta:
+#         model = Build
+#         fields = ['build_id', 'frame', 'propellers', 'motors', 'battery']
+
+
+
+
+
+
+from rest_framework import serializers
+from .models import Message, Build, DeliveryDetails
+
+class MessageSerializer(serializers.ModelSerializer):
     class Meta:
-        model = Build
-        fields = ['build_id']
+        model = Message
+        fields = ['id', 'name', 'text', 'created_at']
 
 class BuildSerializer(serializers.ModelSerializer):
     class Meta:
         model = Build
-        fields = ['build_id', 'frame', 'propellers', 'motors', 'battery']
+        fields = '__all__'
+        read_only_fields = ['build_id', 'created_at', 'updated_at']
+
+class DeliveryDetailsSerializer(serializers.ModelSerializer):
+    build_id = serializers.CharField(source='build.build_id', read_only=True)
+
+    class Meta:
+        model = DeliveryDetails
+        fields = '__all__'
+        read_only_fields = ['delivery_id', 'created_at', 'updated_at']
+
+class BuildDetailSerializer(BuildSerializer):
+    delivery = DeliveryDetailsSerializer(read_only=True)
