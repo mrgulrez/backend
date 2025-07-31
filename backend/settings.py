@@ -151,3 +151,7 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "https://dronegasm.vercel.app",
 ]
+
+
+RAZORPAY_KEY_ID = os.getenv('RAZORPAY_KEY_ID')
+RAZORPAY_KEY_SECRET=os.getenv('RAZORPAY_KEY_SECRET')

@@ -2,7 +2,8 @@ from django.urls import path
 from .views import (
     message_list, message_detail,
     build_list, build_detail, set_delivery,
-    delivery_list, delivery_detail
+    delivery_list, delivery_detail,
+    create_order, verify_payment, order_detail,
 )
 
 urlpatterns = [
@@ -18,4 +19,9 @@ urlpatterns = [
     # Deliveries
     path('deliveries/', delivery_list, name='delivery-list'),
     path('deliveries/<str:delivery_id>/', delivery_detail, name='delivery-detail'),
+
+
+    path('orders/create/', create_order, name='create-order'),
+    path('orders/verify-payment/', verify_payment, name='verify-payment'),
+    path('orders/<str:order_id>/', order_detail, name='order-detail'),
 ]

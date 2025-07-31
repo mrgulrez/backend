@@ -218,3 +218,175 @@ def delivery_detail(request, delivery_id):
     elif request.method == 'DELETE':
         delivery.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+    
+
+
+
+
+
+
+import razorpay
+import json
+from django.conf import settings
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+from rest_framework import status
+from .models import Build, DeliveryDetails, Order, Payment
+from .serializers import OrderSerializer, PaymentSerializer
+
+# Initialize Razorpay client
+client = razorpay.Client(auth=(settings.RAZORPAY_KEY_ID, settings.RAZORPAY_KEY_SECRET))
+
+@api_view(['POST'])
+def create_order(request):
+    # Get build and delivery IDs from request
+    build_id = request.data.get('build_id')
+    delivery_id = request.data.get('delivery_id')
+    
+    if not build_id or not delivery_id:
+        return Response(
+            {'error': 'Missing build_id or delivery_id'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    try:
+        build = Build.objects.get(build_id=build_id)
+        delivery = DeliveryDetails.objects.get(delivery_id=delivery_id)
+    except Build.DoesNotExist:
+        return Response(
+            {'error': 'Build not found'}, 
+            status=status.HTTP_404_NOT_FOUND
+        )
+    except DeliveryDetails.DoesNotExist:
+        return Response(
+            {'error': 'Delivery details not found'},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    # Create order snapshot
+    build_data = BuildSerializer(build).data
+    delivery_data = DeliveryDetailsSerializer(delivery).data
+    
+    # Create Order record
+    order = Order.objects.create(
+        build_snapshot=build_data,
+        delivery_snapshot=delivery_data
+    )
+
+    # Create Razorpay order
+    try:
+        amount = int(float(build.price) * 100)  # Convert to paise
+        razorpay_order = client.order.create({
+            'amount': amount,
+            'currency': 'INR',
+            'payment_capture': 1
+        })
+    except Exception as e:
+        order.delete()
+        return Response(
+            {'error': f'Razorpay error: {str(e)}'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+    # Create Payment record
+    payment = Payment.objects.create(
+        order=order,
+        amount=build.price,
+        razorpay_order_id=razorpay_order['id']
+    )
+
+    print(f"Razorpay Order ID: {razorpay_order['id']}")
+    print(f"Payment ID: {payment.payment_id}")
+    print(f"Razorpay Key ID: {settings.RAZORPAY_KEY_ID}")
+
+    return Response({
+        'order_id': order.order_id,
+        'payment_id': payment.payment_id,
+        'razorpay_order_id': razorpay_order['id'],
+        'amount': build.price,
+        'currency': 'INR',
+        'key': settings.RAZORPAY_KEY_ID
+    }, status=status.HTTP_201_CREATED)
+
+@api_view(['POST'])
+def verify_payment(request):
+    # Validate required parameters
+    required_params = [
+        'razorpay_payment_id', 
+        'razorpay_order_id', 
+        'razorpay_signature',
+        'payment_id'
+    ]
+    
+    if any(param not in request.data for param in required_params):
+        return Response(
+            {'error': 'Missing required parameters'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    data = request.data
+    
+    try:
+        # Verify payment signature
+        client.utility.verify_payment_signature({
+            'razorpay_payment_id': data['razorpay_payment_id'],
+            'razorpay_order_id': data['razorpay_order_id'],
+            'razorpay_signature': data['razorpay_signature']
+        })
+        
+        # Get payment record
+        payment = Payment.objects.get(
+            payment_id=data['payment_id'],
+            razorpay_order_id=data['razorpay_order_id']
+        )
+        
+        # Double-check with Razorpay API
+        razorpay_payment = client.payment.fetch(data['razorpay_payment_id'])
+        
+        if razorpay_payment['status'] != 'captured':
+            return Response(
+                {'error': 'Payment not captured'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Update payment record
+        payment.status = 'paid'
+        payment.razorpay_payment_id = data['razorpay_payment_id']
+        payment.razorpay_signature = data['razorpay_signature']
+        payment.save()
+        
+        # Update order status
+        order = payment.order
+        order.status = 'completed'
+        order.save()
+        
+        return Response({
+            'status': 'success',
+            'order_id': order.order_id,
+            'payment_id': payment.payment_id
+        })
+        
+    except Payment.DoesNotExist:
+        return Response(
+            {'error': 'Invalid payment record'},
+            status=status.HTTP_404_NOT_FOUND
+        )
+    except razorpay.errors.SignatureVerificationError:
+        return Response(
+            {'error': 'Invalid payment signature'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    except Exception as e:
+        return Response(
+            {'error': f'Verification failed: {str(e)}'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@api_view(['GET'])
+def order_detail(request, order_id):
+    try:
+        order = Order.objects.get(order_id=order_id)
+        serializer = OrderSerializer(order)
+        return Response(serializer.data)
+    except Order.DoesNotExist:
+        return Response(status=status.HTTP_404_NOT_FOUND)
