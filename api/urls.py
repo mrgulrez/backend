@@ -3,7 +3,7 @@ from .views import (
     message_list, message_detail,
     build_list, build_detail, set_delivery,
     delivery_list, delivery_detail,
-    create_order, verify_payment, order_detail,
+    create_order, verify_payment, order_detail, order_list
 )
 
 urlpatterns = [
@@ -24,4 +24,5 @@ urlpatterns = [
     path('orders/create/', create_order, name='create-order'),
     path('orders/verify-payment/', verify_payment, name='verify-payment'),
     path('orders/<str:order_id>/', order_detail, name='order-detail'),
+    path('orders/', order_list, name='order-list'),
 ]
