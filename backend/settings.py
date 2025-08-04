@@ -28,8 +28,10 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.getenv('SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv('DEBUG', 'False') == 'True'
-ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', '').split(',')
+# DEBUG = os.getenv('DEBUG', 'False') == 'True'
+# ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', '').split(',')
+DEBUG = True  # Set to False in production
+ALLOWED_HOSTS = ['*']  # Allow all hosts for development; restrict in production
 
 
 # Application definition
@@ -45,11 +47,12 @@ INSTALLED_APPS = [
     'api', 
     "corsheaders",
     'rest_framework',
+    'drf_spectacular', 
 ]
 
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
-    'backend.middleware.RestrictRefererMiddleware',
+  #   'backend.middleware.RestrictRefererMiddleware', # 
     'whitenoise.middleware.WhiteNoiseMiddleware',  # For serving static files in production
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -147,11 +150,27 @@ import re
 
 # Allow only frontend domain (replace with actual)
 CORS_ALLOWED_ORIGINS = [
-    # "http://localhost:3000",
-    # "http://localhost:5173",
+    "http://localhost:3000",
+    "http://localhost:5173",
     "https://dronegasm.vercel.app",
 ]
 
 
 RAZORPAY_KEY_ID = os.getenv('RAZORPAY_KEY_ID')
 RAZORPAY_KEY_SECRET=os.getenv('RAZORPAY_KEY_SECRET')
+
+
+
+REST_FRAMEWORK = {
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+}
+
+
+
+# Configure Spectacular settings
+SPECTACULAR_SETTINGS = {
+    'TITLE':'Dronegasm API',
+    'DESCRIPTION': 'API for managing dronegasm orders, builds, and deliveries.',
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+}

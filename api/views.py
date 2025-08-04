@@ -304,14 +304,14 @@ def verify_payment(request):
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 
-@api_view(['GET'])
-def order_detail(request, order_id):
-    try:
-        order = Order.objects.get(order_id=order_id)
-        serializer = OrderSerializer(order)
-        return Response(serializer.data)
-    except Order.DoesNotExist:
-        return Response(status=status.HTTP_404_NOT_FOUND)
+# @api_view(['GET'])
+# def order_detail(request, order_id):
+#     try:
+#         order = Order.objects.get(order_id=order_id)
+#         serializer = OrderSerializer(order)
+#         return Response(serializer.data)
+#     except Order.DoesNotExist:
+#         return Response(status=status.HTTP_404_NOT_FOUND)
     
 
 @api_view(['GET'])
@@ -319,3 +319,114 @@ def order_list(request):
     orders = Order.objects.all().order_by('-created_at')
     serializer = OrderSerializer(orders, many=True)
     return Response(serializer.data)
+
+
+
+
+
+
+
+@api_view(['GET', 'PUT', 'PATCH'])
+def order_detail(request, order_id):
+    try:
+        order = Order.objects.get(order_id=order_id)
+    except Order.DoesNotExist:
+        return Response(status=status.HTTP_404_NOT_FOUND)
+
+    if request.method == 'GET':
+        serializer = OrderSerializer(order)
+        return Response(serializer.data)
+        
+    elif request.method in ['PUT', 'PATCH']:
+        # Only allow updating status and shipment details
+        allowed_fields = ['status', 'shipment_id', 'tracking_url']
+        data = {k: v for k, v in request.data.items() if k in allowed_fields}
+        
+        # Add changed_by information if available
+        if request.user.is_authenticated:
+            data['changed_by'] = request.user.username
+        
+        partial = (request.method == 'PATCH')
+        serializer = OrderSerializer(order, data=data, partial=partial)
+        
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['POST'])
+def bulk_update_orders(request):
+    updates = request.data.get('updates', [])
+    results = []
+    
+    for update in updates:
+        try:
+            order = Order.objects.get(order_id=update['order_id'])
+            # Only allow updating status and shipment details
+            allowed_fields = ['status', 'shipment_id', 'tracking_url']
+            data = {k: v for k, v in update.items() if k in allowed_fields}
+            
+            # Add changed_by information if available
+            if request.user.is_authenticated:
+                data['changed_by'] = request.user.username
+                
+            serializer = OrderSerializer(order, data=data, partial=True)
+            
+            if serializer.is_valid():
+                serializer.save()
+                results.append({
+                    'order_id': order.order_id,
+                    'status': 'success',
+                    'message': 'Order updated successfully'
+                })
+            else:
+                results.append({
+                    'order_id': order.order_id,
+                    'status': 'error',
+                    'message': serializer.errors
+                })
+        except Order.DoesNotExist:
+            results.append({
+                'order_id': update.get('order_id'),
+                'status': 'error',
+                'message': 'Order not found'
+            })
+        except Exception as e:
+            results.append({
+                'order_id': update.get('order_id'),
+                'status': 'error',
+                'message': str(e)
+            })
+            
+    return Response(results, status=status.HTTP_200_OK)
+
+
+
+@api_view(['POST'])
+def update_tracking(request, order_id):
+    try:
+        order = Order.objects.get(order_id=order_id)
+    except Order.DoesNotExist:
+        return Response({'error': 'Order not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    shipment_id = request.data.get('shipment_id')
+    tracking_url = request.data.get('tracking_url')
+    
+    if not shipment_id or not tracking_url:
+        return Response(
+            {'error': 'Both shipment_id and tracking_url are required'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    order.shipment_id = shipment_id
+    order.tracking_url = tracking_url
+    order.status = 'dispatched'
+    order.save()
+    
+    return Response({
+        'status': 'success',
+        'message': 'Tracking information updated',
+        'order_status': order.status,
+        'shipment_id': order.shipment_id,
+        'tracking_url': order.tracking_url
+    })

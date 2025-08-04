@@ -47,11 +47,29 @@ class BuildDetailSerializer(BuildSerializer):
 from rest_framework import serializers
 from .models import Order, Payment
 
+# class OrderSerializer(serializers.ModelSerializer):
+#     class Meta:
+#         model = Order
+#         fields = '__all__'
+#         read_only_fields = ['order_id', 'created_at', 'updated_at', 'status']
+
+
+
 class OrderSerializer(serializers.ModelSerializer):
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    
     class Meta:
         model = Order
         fields = '__all__'
-        read_only_fields = ['order_id', 'created_at', 'updated_at', 'status']
+        read_only_fields = [
+            'order_id', 
+            'created_at', 
+            'updated_at', 
+            'build_snapshot', 
+            'delivery_snapshot',
+            'status_history'
+        ]
+
 
 class PaymentSerializer(serializers.ModelSerializer):
     class Meta:
