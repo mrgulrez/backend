@@ -56,7 +56,7 @@ from .models import Order, Payment
 
 
 class OrderSerializer(serializers.ModelSerializer):
-    status_display = serializers.CharField(source='get_status_display', read_only=True)
+   # track_status = serializers.CharField(source='get_status_display', read_only=True)
     
     class Meta:
         model = Order

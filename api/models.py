@@ -29,8 +29,6 @@
 
 
 from django.db import models
-
-from django.db import models
 import uuid
 from django.utils import timezone
 
@@ -78,29 +76,9 @@ class DeliveryDetails(models.Model):
 
 
 
-# class Order(models.Model):
-#     ORDER_STATUS_CHOICES = [
-#         ('pending', 'Pending'),
-#         ('completed', 'Completed'),
-#         ('cancelled', 'Cancelled'),
-#     ]
-    
-#     order_id = models.CharField(max_length=50, unique=True, default=uuid.uuid4, editable=False)
-#     build_snapshot = models.JSONField()  # Stores Build data at time of order
-#     delivery_snapshot = models.JSONField()  # Stores DeliveryDetails at time of order
-#     status = models.CharField(max_length=20, choices=ORDER_STATUS_CHOICES, default='pending')
-#     created_at = models.DateTimeField(auto_now_add=True)
-#     updated_at = models.DateTimeField(auto_now=True)
-
-#     def __str__(self):
-#         return self.order_id
-
-
-
-
-
 class Order(models.Model):
     STATUS_CHOICES = [
+        ('order_pending', 'Order Pending'),
         ('order_received', 'Order Received'),
         ('building', 'Building/Assembling'),
         ('packing', 'Packing'),
@@ -109,10 +87,10 @@ class Order(models.Model):
         ('cancelled', 'Cancelled'),
     ]
     
-    order_id = models.CharField(max_length=50, unique=True, default=uuid.uuid4, editable=False)
     build_snapshot = models.JSONField()
     delivery_snapshot = models.JSONField()
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='order_received')
+    order_id = models.CharField(max_length=50, unique=True, default=uuid.uuid4, editable=False)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='order_pending')
     shipment_id = models.CharField(max_length=100, blank=True, null=True)
     tracking_url = models.URLField(max_length=500, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)

@@ -158,6 +158,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from .models import Build, DeliveryDetails, Order, Payment
 from .serializers import OrderSerializer, PaymentSerializer
+from django.utils import timezone
 
 # Initialize Razorpay client
 client = razorpay.Client(auth=(settings.RAZORPAY_KEY_ID, settings.RAZORPAY_KEY_SECRET))
@@ -279,7 +280,7 @@ def verify_payment(request):
         
         # Update order status
         order = payment.order
-        order.status = 'completed'
+        order.status = 'order_received'
         order.save()
         
         return Response({
@@ -325,7 +326,6 @@ def order_list(request):
 
 
 
-
 @api_view(['GET', 'PUT', 'PATCH'])
 def order_detail(request, order_id):
     try:
@@ -353,6 +353,8 @@ def order_detail(request, order_id):
             serializer.save()
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
 
 @api_view(['POST'])
 def bulk_update_orders(request):
