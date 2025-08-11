@@ -3,7 +3,11 @@ from .views import (
     message_list, message_detail,
     build_list, build_detail, set_delivery,
     delivery_list, delivery_detail,
-    create_order, verify_payment, order_detail, order_list, update_tracking, bulk_update_orders
+    create_order, verify_payment, 
+    order_detail, order_list, 
+    update_tracking, bulk_update_orders,
+    coupon_list, coupon_detail,
+    validate_coupon
 )
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
@@ -28,6 +32,10 @@ urlpatterns = [
     path('orders/<str:order_id>/', order_detail, name='order-detail'),
     path('orders/', order_list, name='order-list'),
     path('orders/<str:order_id>/tracking/', update_tracking, name='update-tracking'),
+
+    path('coupons/', coupon_list, name='coupon-list'),
+    path('coupons/validate/', validate_coupon, name='validate-coupon'),  
+    path('coupons/<str:code>/', coupon_detail, name='coupon-detail'),
 
 
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),

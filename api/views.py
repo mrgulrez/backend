@@ -2,13 +2,28 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework import status
 import uuid
-from .models import Message, Build, DeliveryDetails
+from django.db import transaction
+import logging
+import razorpay
+import razorpay.errors  # Added missing import
+from django.conf import settings
+from django.db.models import F
+from .models import Message, Build, DeliveryDetails, Coupon, Order, Payment
 from .serializers import (
     MessageSerializer,
     BuildSerializer,
     BuildDetailSerializer,
-    DeliveryDetailsSerializer
+    DeliveryDetailsSerializer,
+    CouponSerializer,
+    OrderSerializer,
+    PaymentSerializer
 )
+
+# Set up logging
+logger = logging.getLogger(__name__)
+
+# Initialize Razorpay client
+client = razorpay.Client(auth=(settings.RAZORPAY_KEY_ID, settings.RAZORPAY_KEY_SECRET))
 
 # Message Endpoints
 @api_view(['GET', 'POST'])
@@ -45,7 +60,6 @@ def message_detail(request, pk):
     elif request.method == 'DELETE':
         message.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
-
 
 # Build Endpoints
 @api_view(['GET', 'POST'])
@@ -102,7 +116,6 @@ def set_delivery(request, build_id):
         return Response(serializer.data, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-
 # Delivery Endpoints
 @api_view(['GET', 'POST'])
 def delivery_list(request):
@@ -119,8 +132,6 @@ def delivery_list(request):
             serializer.save()
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
-    
 
 @api_view(['GET', 'PUT', 'PATCH', 'DELETE'])
 def delivery_detail(request, delivery_id):
@@ -143,29 +154,9 @@ def delivery_detail(request, delivery_id):
     elif request.method == 'DELETE':
         delivery.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
-    
-
-
-
-
-
-
-import razorpay
-import json
-from django.conf import settings
-from rest_framework.decorators import api_view
-from rest_framework.response import Response
-from rest_framework import status
-from .models import Build, DeliveryDetails, Order, Payment
-from .serializers import OrderSerializer, PaymentSerializer
-from django.utils import timezone
-
-# Initialize Razorpay client
-client = razorpay.Client(auth=(settings.RAZORPAY_KEY_ID, settings.RAZORPAY_KEY_SECRET))
 
 @api_view(['POST'])
 def create_order(request):
-    # Get build and delivery IDs from request
     build_id = request.data.get('build_id')
     delivery_id = request.data.get('delivery_id')
     
@@ -189,51 +180,75 @@ def create_order(request):
             status=status.HTTP_404_NOT_FOUND
         )
 
-    # Create order snapshot
     build_data = BuildSerializer(build).data
     delivery_data = DeliveryDetailsSerializer(delivery).data
-    
-    # Create Order record
-    order = Order.objects.create(
-        build_snapshot=build_data,
-        delivery_snapshot=delivery_data
-    )
 
-    # Create Razorpay order
-    try:
-        amount = int(float(build.price) * 100)  # Convert to paise
-        razorpay_order = client.order.create({
-            'amount': amount,
-            'currency': 'INR',
-            'payment_capture': 1
-        })
-    except Exception as e:
-        order.delete()
-        return Response(
-            {'error': f'Razorpay error: {str(e)}'},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+    coupon = None
+    discount_amount = 0
+    coupon_code = request.data.get('coupon_code')
+    final_price = float(build.price)
+    
+    if coupon_code:
+        try:
+            coupon = Coupon.objects.get(code=coupon_code)
+            if not coupon.is_valid():
+                return Response(
+                    {'error': 'Coupon has reached its usage limit or expired'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            final_price = coupon.apply_discount(final_price)
+            discount_amount = build.price - final_price
+        except Coupon.DoesNotExist:
+            return Response(
+                {'error': 'Invalid coupon code'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+    # Fixed typo: transaction.atomic() instead of transaction Atomic()
+    with transaction.atomic():
+        order = Order.objects.create(
+            build_snapshot=build_data,
+            delivery_snapshot=delivery_data,
+            coupon=coupon,
+            discount_amount=discount_amount,
         )
 
-    # Create Payment record
-    payment = Payment.objects.create(
-        order=order,
-        amount=build.price,
-        razorpay_order_id=razorpay_order['id']
-    )
+        try:
+            amount = int(final_price * 100)
+            razorpay_order = client.order.create({
+                'amount': amount,
+                'currency': 'INR',
+                'payment_capture': 1
+            })
 
+        except Exception as e:
+            logger.error(f"Razorpay order creation failed: {str(e)}")
+            order.delete()
+            return Response(
+                {'error': f'Razorpay error: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+        payment = Payment.objects.create(
+            order=order,
+            amount=int(final_price * 100),
+            razorpay_order_id=razorpay_order['id']
+        )
 
     return Response({
         'order_id': order.order_id,
         'payment_id': payment.payment_id,
         'razorpay_order_id': razorpay_order['id'],
-        'amount': build.price,
+        'amount': final_price,
         'currency': 'INR',
-        'key': settings.RAZORPAY_KEY_ID
+        'key': settings.RAZORPAY_KEY_ID,
+        'discount_amount': discount_amount,
+        'final_amount': final_price,
     }, status=status.HTTP_201_CREATED)
+
 
 @api_view(['POST'])
 def verify_payment(request):
-    # Validate required parameters
     required_params = [
         'razorpay_payment_id', 
         'razorpay_order_id', 
@@ -250,39 +265,44 @@ def verify_payment(request):
     data = request.data
     
     try:
-        # Verify payment signature
         client.utility.verify_payment_signature({
             'razorpay_payment_id': data['razorpay_payment_id'],
             'razorpay_order_id': data['razorpay_order_id'],
             'razorpay_signature': data['razorpay_signature']
         })
         
-        # Get payment record
         payment = Payment.objects.get(
             payment_id=data['payment_id'],
             razorpay_order_id=data['razorpay_order_id']
         )
         
-        # Double-check with Razorpay API
         razorpay_payment = client.payment.fetch(data['razorpay_payment_id'])
         
         if razorpay_payment['status'] != 'captured':
+            logger.warning(f"Payment not captured: {data['razorpay_payment_id']}")
             return Response(
                 {'error': 'Payment not captured'},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        # Update payment record
-        payment.status = 'paid'
-        payment.razorpay_payment_id = data['razorpay_payment_id']
-        payment.razorpay_signature = data['razorpay_signature']
-        payment.save()
-        
-        # Update order status
-        order = payment.order
-        order.status = 'order_received'
-        order.save()
-        
+        with transaction.atomic():
+            payment.status = 'paid'
+            payment.razorpay_payment_id = data['razorpay_payment_id']
+            payment.razorpay_signature = data['razorpay_signature']
+            payment.save()
+            
+            order = payment.order
+            order.status = 'order_received'
+            order.save()
+
+            if order.coupon_id:
+                logger.info(f"Updating usage count for coupon ID: {order.coupon_id}")
+                try:
+                    Coupon.objects.filter(id=order.coupon_id).update(used_count=F('used_count') + 1)
+                    logger.info(f"Coupon ID: {order.coupon_id} usage count incremented.")
+                except Coupon.DoesNotExist:
+                    logger.error(f"Coupon with ID {order.coupon_id} not found")
+
         return Response({
             'status': 'success',
             'order_id': order.order_id,
@@ -290,41 +310,32 @@ def verify_payment(request):
         })
         
     except Payment.DoesNotExist:
+        logger.error(f"Payment not found: {data['payment_id']}")
         return Response(
             {'error': 'Invalid payment record'},
             status=status.HTTP_404_NOT_FOUND
         )
-    except razorpay.errors.SignatureVerificationError:
+    except razorpay.errors.SignatureVerificationError as e:
+        logger.error(f"Signature verification failed: {str(e)}")
         return Response(
             {'error': 'Invalid payment signature'},
             status=status.HTTP_400_BAD_REQUEST
         )
     except Exception as e:
+        logger.error(f"Verification failed: {str(e)}")
         return Response(
             {'error': f'Verification failed: {str(e)}'},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 
-# @api_view(['GET'])
-# def order_detail(request, order_id):
-#     try:
-#         order = Order.objects.get(order_id=order_id)
-#         serializer = OrderSerializer(order)
-#         return Response(serializer.data)
-#     except Order.DoesNotExist:
-#         return Response(status=status.HTTP_404_NOT_FOUND)
-    
+
+        
 
 @api_view(['GET'])
 def order_list(request):
     orders = Order.objects.all().order_by('-created_at')
     serializer = OrderSerializer(orders, many=True)
     return Response(serializer.data)
-
-
-
-
-
 
 @api_view(['GET', 'PUT', 'PATCH'])
 def order_detail(request, order_id):
@@ -338,11 +349,9 @@ def order_detail(request, order_id):
         return Response(serializer.data)
         
     elif request.method in ['PUT', 'PATCH']:
-        # Only allow updating status and shipment details
         allowed_fields = ['status', 'shipment_id', 'tracking_url']
         data = {k: v for k, v in request.data.items() if k in allowed_fields}
         
-        # Add changed_by information if available
         if request.user.is_authenticated:
             data['changed_by'] = request.user.username
         
@@ -355,7 +364,6 @@ def order_detail(request, order_id):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-
 @api_view(['POST'])
 def bulk_update_orders(request):
     updates = request.data.get('updates', [])
@@ -364,16 +372,14 @@ def bulk_update_orders(request):
     for update in updates:
         try:
             order = Order.objects.get(order_id=update['order_id'])
-            # Only allow updating status and shipment details
             allowed_fields = ['status', 'shipment_id', 'tracking_url']
             data = {k: v for k, v in update.items() if k in allowed_fields}
-            
-            # Add changed_by information if available
+
             if request.user.is_authenticated:
                 data['changed_by'] = request.user.username
-                
+
             serializer = OrderSerializer(order, data=data, partial=True)
-            
+
             if serializer.is_valid():
                 serializer.save()
                 results.append({
@@ -393,6 +399,7 @@ def bulk_update_orders(request):
                 'status': 'error',
                 'message': 'Order not found'
             })
+
         except Exception as e:
             results.append({
                 'order_id': update.get('order_id'),
@@ -401,8 +408,6 @@ def bulk_update_orders(request):
             })
             
     return Response(results, status=status.HTTP_200_OK)
-
-
 
 @api_view(['POST'])
 def update_tracking(request, order_id):
@@ -432,3 +437,81 @@ def update_tracking(request, order_id):
         'shipment_id': order.shipment_id,
         'tracking_url': order.tracking_url
     })
+
+@api_view(['GET', 'POST'])
+def coupon_list(request):
+    if request.method == 'GET':
+        coupons = Coupon.objects.all().order_by('-created_at')
+        serializer = CouponSerializer(coupons, many=True)
+        return Response(serializer.data)
+    
+    elif request.method == 'POST':
+        serializer = CouponSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['GET', 'PUT', 'PATCH', 'DELETE'])
+def coupon_detail(request, code):
+    try:
+        coupon = Coupon.objects.get(code=code)
+    except Coupon.DoesNotExist:
+        logger.error(f"Coupon with code {code} not found")
+        return Response(status=status.HTTP_404_NOT_FOUND)
+
+    if request.method == 'GET':
+        serializer = CouponSerializer(coupon)
+        return Response(serializer.data)
+    
+    elif request.method in ['PUT', 'PATCH']:
+        partial = (request.method == 'PATCH')
+        serializer = CouponSerializer(coupon, data=request.data, partial=partial)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    elif request.method == 'DELETE':
+        try:
+            logger.info(f"Attempting to delete coupon: {code}")
+            coupon.delete()
+            logger.info(f"Coupon {code} deleted successfully")
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        except Exception as e:
+            logger.error(f"Failed to delete coupon {code}: {str(e)}")
+            # Fixed status parameter
+            return Response(
+                {'error': f'Failed to delete coupon: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+@api_view(['POST'])
+def validate_coupon(request):
+    code = request.data.get('code')
+    if not code:
+        return Response(
+            {'error': 'Coupon code is required'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    try:
+        coupon = Coupon.objects.get(code=code)
+       # print(f"Validating coupon: {coupon.code}")
+        if coupon.is_valid():
+            return Response({
+                'valid': True,
+                'code': coupon.code,
+                'discount_type': coupon.discount_type,
+                'discount_value': str(coupon.discount_value)
+            })
+        return Response({
+            'valid': False,
+            'error': 'Coupon is expired or fully used'
+        })
+    except Coupon.DoesNotExist:
+        return Response({
+            'valid': False,
+            'error': 'Invalid coupon code'
+        })

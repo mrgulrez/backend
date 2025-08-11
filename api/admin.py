@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Order
+from .models import Order, Build, Message, Coupon
 
 @admin.register(Order)
 class OrderAdmin(admin.ModelAdmin):
@@ -25,3 +25,9 @@ class OrderAdmin(admin.ModelAdmin):
         if obj.shipment_id and obj.tracking_url and obj.status != 'dispatched':
             obj.status = 'dispatched'
         super().save_model(request, obj, form, change)
+
+
+
+admin.site.register(Coupon)
+
+

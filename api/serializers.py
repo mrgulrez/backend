@@ -17,7 +17,7 @@
 
 
 from rest_framework import serializers
-from .models import Message, Build, DeliveryDetails
+from .models import Message, Build, DeliveryDetails, Coupon
 
 class MessageSerializer(serializers.ModelSerializer):
     class Meta:
@@ -55,8 +55,34 @@ from .models import Order, Payment
 
 
 
+class CouponSerializer(serializers.ModelSerializer):
+    is_valid = serializers.BooleanField(read_only=True)
+    
+    class Meta:
+        model = Coupon
+        fields = '__all__'
+        read_only_fields = ['used_count', 'created_at', 'updated_at']
+    
+    def create(self, validated_data):
+        # Create coupon instance
+        return Coupon.objects.create(**validated_data)
+    
+    def update(self, instance, validated_data):
+        # Update coupon instance
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+        return instance
+
+
+
 class OrderSerializer(serializers.ModelSerializer):
    # track_status = serializers.CharField(source='get_status_display', read_only=True)
+    coupon = CouponSerializer(read_only=True)
+    coupon_code = serializers.CharField(
+        write_only=True,
+        required=False, 
+        allow_null = True)
     
     class Meta:
         model = Order
@@ -67,8 +93,24 @@ class OrderSerializer(serializers.ModelSerializer):
             'updated_at', 
             'build_snapshot', 
             'delivery_snapshot',
-            'status_history'
+            'status_history',
+            'coupon',
+            'discount_amount'
         ]
+    
+    def create(self, validated_data):
+        coupon_code = validated_data.pop('coupon_code', None)
+
+    
+    def validate_coupon_code(self, value):
+        if value:
+            try:
+                coupon = Coupon.objects.get(code=value)
+                if not coupon.is_valid():
+                    raise serializers.ValidationError("Coupon is invalid or expired")
+            except Coupon.DoesNotExist:
+                raise serializers.ValidationError("Invalid coupon code")
+        return value
 
 
 class PaymentSerializer(serializers.ModelSerializer):
