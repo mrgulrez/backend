@@ -14,7 +14,7 @@ from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
 urlpatterns = [
     # Messages
-    path('messages/', message_list, name='message-list'),
+    path('', message_list, name='message-list'),
     path('messages/<int:pk>/', message_detail, name='message-detail'),
 
     # Builds
